@@ -1,0 +1,26 @@
+# Beispiel-Compose fuer standalone-Betrieb.
+# Kopiere nach `docker-compose.yml`, passe Volumes + Port an.
+# Empfohlen: hinter Reverse-Proxy (Caddy/Traefik/nginx) mit TLS.
+
+services:
+  mcp:
+    build: .
+    container_name: template-mcp
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "127.0.0.1:5002:5002"   # NUR localhost — TLS via Reverse-Proxy
+    volumes:
+      - ./data:/data                                  # User-Daten
+      - ./logs:/var/log/mcp                           # Audit-Logs
+      - ./snapshots:/snapshots                        # Backup-Snapshots
+      - mcp-oauth-db:/var/lib/mcp-oauth               # OAuth-DB (Clients+Refresh-Tokens)
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:5002/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  mcp-oauth-db:
