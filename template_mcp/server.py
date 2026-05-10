@@ -18,6 +18,7 @@ from __future__ import annotations
 import logging
 import os
 import time
+from contextlib import asynccontextmanager
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
@@ -292,22 +293,42 @@ _START_TS = time.monotonic()
 
 
 def build_app() -> Starlette:
-    """Komponiert die ASGI-App. Reihenfolge der Middleware ist wichtig:
-    RateLimit → DualAuth → MCP-Mount.
+    """Komponiert die ASGI-App.
+
+    Wichtig:
+      1. Lifespan reicht den FastMCP-`session_manager` durch — ohne das
+         hangen MCP-`initialize`-Calls. Aequivalent zu main MCP server.py.
+      2. Mount sowohl `/mcp` ALS AUCH `/mcp/` — manche MCP-Hosts
+         (z.B. claude.ai) folgen dem 307-Slash-Redirect nicht und brechen
+         die Verbindung dann mit einem POST-Body ab. Plus
+         `redirect_slashes = False`.
+      3. Middleware-Reihenfolge: RateLimit (outer) → DualAuth → MCP-Mount.
     """
     _boot_security_check()
     audit.log_event("server_start", server=SERVER_NAME, version=__version__)
 
+    mcp_app = mcp.streamable_http_app()
+
+    @asynccontextmanager
+    async def lifespan(app: Starlette):
+        async with mcp_app.router.lifespan_context(app):
+            yield
+        audit.log_event("server_stop", server=SERVER_NAME)
+
     routes: list[Any] = [Route("/health", health, methods=["GET"])]
     routes.extend(oauth_routes.routes())
-    routes.append(Mount("/mcp", app=mcp.streamable_http_app()))
+    # Beide Pfade: ohne 307-Redirect (claude.ai BETA folgt dem nicht)
+    routes.append(Mount("/mcp", app=mcp_app))
+    routes.append(Mount("/mcp/", app=mcp_app))
 
     middleware = [
         Middleware(ratelimit.RateLimitMiddleware),
         Middleware(DualAuthMiddleware),
     ]
 
-    return Starlette(routes=routes, middleware=middleware)
+    app = Starlette(routes=routes, middleware=middleware, lifespan=lifespan)
+    app.router.redirect_slashes = False
+    return app
 
 
 app = build_app()
