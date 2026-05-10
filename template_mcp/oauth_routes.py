@@ -17,15 +17,19 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from urllib.parse import urlencode
 
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from starlette.routing import Route
 
-from ki_os_mcp import oauth
+from . import oauth
 
-log = logging.getLogger("ki-os-mcp.oauth_routes")
+log = logging.getLogger("template-mcp.oauth_routes")
+
+# Anzeige-Name fuer das Login-HTML — env-konfigurierbar
+SERVER_DISPLAY_NAME = os.environ.get("MCP_DISPLAY_NAME", "MCP Server")
 
 
 # ---------- HTML-Templates --------------------------------------------------
@@ -34,7 +38,7 @@ LOGIN_HTML = """<!doctype html>
 <html lang="de">
 <head>
 <meta charset="utf-8">
-<title>KI-OS Login</title>
+<title>{server_name} Login</title>
 <style>
   * {{ box-sizing: border-box; }}
   body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -59,13 +63,13 @@ LOGIN_HTML = """<!doctype html>
 </style>
 </head>
 <body>
-  <h1>KI-OS Vault — Anmeldung</h1>
-  <div class="sub">Damit <b>{client_name}</b> auf dein Vault zugreifen darf.</div>
+  <h1>{server_name} — Anmeldung</h1>
+  <div class="sub">Damit <b>{client_name}</b> Zugriff auf den MCP-Server bekommt.</div>
 
   <div class="client">
     <b>App:</b> {client_name}<br>
     <b>Redirect:</b> <code>{redirect_uri_safe}</code>
-    <div class="scopes"><b>Berechtigungen:</b> {scope} (alles — Lese-, Schreib-, Maintain-Operationen)</div>
+    <div class="scopes"><b>Berechtigungen:</b> {scope}</div>
   </div>
 
   {error_html}
@@ -103,6 +107,7 @@ def _render_login(client_id: str, redirect_uri: str, state: str,
                   email_value: str = "") -> str:
     error_html = f'<div class="err">{_esc(error)}</div>' if error else ""
     return LOGIN_HTML.format(
+        server_name=_esc(SERVER_DISPLAY_NAME),
         client_id=_esc(client_id),
         redirect_uri=_esc(redirect_uri),
         redirect_uri_safe=_esc(redirect_uri),

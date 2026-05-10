@@ -1,8 +1,8 @@
-"""Backup-Snapshots vor destruktiven Vault-Operationen.
+"""Backup-Snapshots vor destruktiven File-Operationen.
 
-Vor jedem `move`, `confirm_delete`, `edit_file`-Body-Replace wird ein
+Vor jeder Move-, Delete- oder Body-Replace-Operation wird ein
 tar.gz-Archiv der betroffenen Files in MCP_SNAPSHOT_DIR angelegt.
-Recovery: einfach Tar entpacken über Vault.
+Recovery: einfach das Tar-Archiv ueber den Daten-Ordner entpacken.
 
 Snapshot-Pfad-Schema:
   {MCP_SNAPSHOT_DIR}/{YYYY-MM-DD}/{HH-MM-SS}_{op}_{slug}.tar.gz
@@ -20,7 +20,7 @@ from datetime import datetime
 from io import BytesIO
 from pathlib import Path
 
-log = logging.getLogger("ki-os-mcp.snapshot")
+log = logging.getLogger("template-mcp.snapshot")
 
 SNAPSHOT_DIR = Path(os.environ.get("MCP_SNAPSHOT_DIR", "/snapshots"))
 SNAPSHOT_ENABLED = os.environ.get("MCP_SNAPSHOT_ENABLED", "1") not in ("0", "false", "no")
@@ -55,7 +55,7 @@ def snapshot(op: str, files: dict[str, bytes]) -> str | None:
 
         # Slug aus erstem File-Pfad
         first_path = next(iter(files))
-        slug = _safe_slug(Path(first_path).stem or "vault")
+        slug = _safe_slug(Path(first_path).stem or "snapshot")
         ts = now.strftime("%H-%M-%S")
         out = day_dir / f"{ts}_{op}_{slug}.tar.gz"
 

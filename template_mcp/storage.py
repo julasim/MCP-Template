@@ -1,9 +1,7 @@
 """Generischer File-Store fuer MCP-Tools.
 
-Ersetzt das domain-spezifische `vault.py` aus KI_WIKI_MCP. Stelle dies
-nach deinem Backend an: Files, S3, Datenbank, externe API, etc.
-
-Hier: simpler File-System-Backend mit Path-Traversal-Schutz.
+Stelle dies nach deinem Backend an: Files, S3, Datenbank, externe API, etc.
+Hier: simpler File-System-Backend mit Path-Traversal-Schutz unter DATA_PATH.
 """
 
 from __future__ import annotations

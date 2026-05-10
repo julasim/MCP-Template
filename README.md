@@ -1,9 +1,9 @@
 # template-mcp
 
-Production-ready Skelett fuer einen MCP-Server. Enthaelt alles, was im
-KI-OS-Vault-MCP gehaertet wurde: Dual-Auth (Bearer + OAuth 2.1), Audit-Log,
-Rate-Limiting, Backup-Snapshots, Pre-Write-Validators, Boot-Security-Checks,
-Spec-Compliance (MCP 2025-06-18, OAuth 2.1, RFC 7591/7636/8414/9728).
+Production-ready Skelett fuer einen MCP-Server. Enthaelt Dual-Auth
+(Bearer + OAuth 2.1), Audit-Log, Rate-Limiting, Backup-Snapshots,
+Pre-Write-Validators, Boot-Security-Checks und volle Spec-Compliance
+(MCP 2025-06-18, OAuth 2.1, RFC 7591/7636/8414/9728).
 
 Stelle die 5 Beispiel-Tools (`search`, `read_file`, `list_files`,
 `create_note`, `edit_file_replace`) nach mit deinen Domain-Tools.
@@ -25,15 +25,16 @@ Stelle die 5 Beispiel-Tools (`search`, `read_file`, `list_files`,
 | Boot-Checks | Warnt bei schwachen Secrets, nicht-schreibbarem Audit-Dir |
 | Async-Sicherheit | bcrypt + SQLite via `asyncio.to_thread` (kein Event-Loop-Deadlock) |
 | Storage | File-System unter `DATA_PATH` mit Path-Traversal-Schutz |
-| Health | `/health` ohne Auth, fuer Caddy/Compose Healthcheck |
-| Docker | Multi-Stage `Dockerfile`, Non-Root, Healthcheck, slim Base |
+| Health | `/health` ohne Auth, fuer Reverse-Proxy-/Compose-Healthcheck |
+| Docker | Slim Base-Image, Non-Root User, Healthcheck |
 
 ## Schnellstart (lokal)
 
 ```bash
-# 1) Repo klonen
-git clone https://github.com/julasim/MCP-Template.git my-mcp
+# 1) Repo als Template verwenden
+git clone <this-repo-url> my-mcp
 cd my-mcp
+rm -rf .git && git init   # eigenes Repo fuer dein Projekt
 
 # 2) ENV vorbereiten
 cp .env.example .env
@@ -42,28 +43,30 @@ cp .env.example .env
 python -c "import secrets; print('MCP_TOKEN=' + secrets.token_urlsafe(48))" >> .env
 
 # 4) (Optional) OAuth aktivieren
-python -c "import secrets; print('OAUTH_JWT_SECRET=' + secrets.token_urlsafe(48))" >> .env
-python scripts/set_oauth_password.py    # erzeugt OAUTH_PASSWORD_HASH
+python scripts/set_oauth_password.py    # erzeugt Email + Hash + JWT-Secret
+# Output-Zeilen in .env einfuegen
 
 # 5) Compose starten
 cp docker-compose.example.yml docker-compose.yml
 docker compose up -d --build
 
 # 6) Smoke-Test
-docker exec template-mcp python scripts/smoke_test.py http://localhost:5002
+docker compose exec mcp python scripts/smoke_test.py http://localhost:5002
 ```
 
-## Production-Deployment (hinter Caddy)
+## Production-Deployment hinter einem Reverse-Proxy
 
-Im Container nur `127.0.0.1:5002` bind, TLS via Reverse-Proxy. Beispiel-Caddyfile:
+Im Container nur `127.0.0.1:5002` binden, TLS via Reverse-Proxy. Beispiel
+mit Caddy:
 
 ```caddy
 mcp.example.com {
-    # claude.ai schickt /mcp ohne Slash; Mount("/mcp") in Starlette gibt 404
+    # Manche MCP-Hosts senden /mcp ohne Slash; Mount("/mcp") in Starlette
+    # gibt 404. rewrite ist transparent (kein 307 Redirect).
     @mcp_noslash path /mcp
     rewrite @mcp_noslash /mcp/
 
-    # CSP-Override fuer das Login-HTML
+    # CSP-Override fuer das Login-HTML (verwendet inline-CSS)
     @oauth_html path /oauth/authorize
     header @oauth_html Content-Security-Policy "default-src 'self'; style-src 'unsafe-inline'"
 
@@ -71,26 +74,27 @@ mcp.example.com {
 }
 ```
 
-Anschliessend in `.env` setzen:
+Anschliessend in `.env` die Public-URLs setzen, sonst akzeptieren
+OAuth-Clients die Tokens nicht (audience-Mismatch):
 
 ```
 OAUTH_ISSUER=https://mcp.example.com
 OAUTH_RESOURCE=https://mcp.example.com/mcp/
-MCP_ALLOWED_ORIGINS=https://claude.ai,https://chat.openai.com
+MCP_ALLOWED_ORIGINS=https://example-host-1.com,https://example-host-2.com
 ```
 
 ## Auth — wer nutzt was?
 
-| Client | Empfohlenes Verfahren |
+| Client-Typ | Empfohlenes Verfahren |
 |---|---|
-| Eigener Bot, CLI-Scripts | Bearer-Token (`MCP_TOKEN`) |
-| `claude` CLI | Bearer-Token |
-| claude.ai Web-Connector | OAuth 2.1 (PKCE + DCR) |
-| ChatGPT / Cursor | OAuth 2.1 |
+| Eigener Bot, CLI, Scripts | Bearer-Token (`MCP_TOKEN`) |
+| MCP-Hosts mit OAuth-Support (z.B. Web-UIs) | OAuth 2.1 (PKCE + DCR) |
+| MCP-Hosts ohne OAuth | Bearer-Token |
 | Custom-App mit User-Login | OAuth 2.1 |
 
-Beide Verfahren laufen parallel via `DualAuthMiddleware` — der Server probiert
-JWT zuerst, faellt zurueck auf statisches Bearer.
+Beide Verfahren laufen parallel via `DualAuthMiddleware`. Der Server probiert
+JWT (OAuth) zuerst, faellt zurueck auf statisches Bearer-Token. Wenn nur eines
+konfiguriert ist, ist nur dieses aktiv.
 
 ## Eigene Tools hinzufuegen
 
@@ -132,56 +136,58 @@ Annotations sind ab MCP 2025-06-18 Spec-Pflicht. Vergiss sie nicht.
 
 ```
 template_mcp/
-├── __init__.py            Version
-├── server.py              FastMCP + Middleware-Stack + 5 Beispiel-Tools
-├── storage.py             File-System-Backend (DATA_PATH, safe_path, slugify, grep)
-├── validators.py          Pre-Write-Checks
-├── oauth.py               OAuth 2.1 Core (JWT, PKCE, DCR, Refresh-Rotation)
-├── oauth_routes.py        Discovery + Authorize + Token + Revoke + Login-HTML
-├── audit.py               JSONL Audit-Log mit time_call Decorator
-├── ratelimit.py           Token-Bucket Middleware
-└── snapshot.py            tar.gz Backups vor destruktiven Ops
+|- __init__.py            Version
+|- server.py              FastMCP + Middleware-Stack + 5 Beispiel-Tools
+|- storage.py             File-System-Backend (DATA_PATH, safe_path, slugify, grep)
+|- validators.py          Pre-Write-Checks
+|- oauth.py               OAuth 2.1 Core (JWT, PKCE, DCR, Refresh-Rotation)
+|- oauth_routes.py        Discovery + Authorize + Token + Revoke + Login-HTML
+|- audit.py               JSONL Audit-Log mit time_call Decorator
+|- ratelimit.py           Token-Bucket Middleware
+\- snapshot.py            tar.gz Backups vor destruktiven Ops
 
 scripts/
-├── set_oauth_password.py  bcrypt-Hash erzeugen + .env updaten
-├── rotate_token.py        MCP_TOKEN in .env neu generieren
-└── smoke_test.py          End-to-End Health + Auth-Check
+|- set_oauth_password.py  bcrypt-Hash erzeugen + Email/JWT-Secret-Output
+|- rotate_token.py        MCP_TOKEN in .env neu generieren
+\- smoke_test.py          End-to-End Health + Auth-Check
 
-Dockerfile                 Slim Base, Non-Root, Healthcheck
+Dockerfile                Slim Base, Non-Root, Healthcheck
 docker-compose.example.yml Standalone-Setup
-.env.example               Alle Env-Vars dokumentiert
-pyproject.toml             Dependencies mit Major-Bounds
+.env.example              Alle Env-Vars dokumentiert
+pyproject.toml            Dependencies mit Major-Bounds
 ```
 
 ## Wichtige Lessons Learned
 
-1. **`$$`-Escape in docker-compose env_file**: bcrypt-Hashes haben `$`-Zeichen
-   die docker-compose als Variable interpretiert. Idiom (idempotent):
+1. **`$$`-Escape in docker-compose env_file**: bcrypt-Hashes haben `$`-Zeichen,
+   die docker-compose als Variable interpretiert. Idempotentes Idiom:
    ```bash
    sed -i '/^OAUTH_PASSWORD_HASH=/ s|\$\+|$$|g' .env
    ```
 
-2. **Caddy `rewrite` statt `redir` fuer `/mcp` ohne Slash**: claude.ai sendet
-   `/mcp` ohne Trailing-Slash, Starlettes `Mount("/mcp")` gibt aber 404.
-   `rewrite` ist transparent (kein 307 → claude.ai folgt Redirects nicht
-   sauber bei POST mit Body).
+2. **Reverse-Proxy `rewrite` statt `redir` fuer `/mcp` ohne Slash**: viele
+   MCP-Clients senden `/mcp` ohne Trailing-Slash; Starlettes `Mount("/mcp")`
+   gibt aber 404. `rewrite` ist transparent (kein 307 — manche Clients folgen
+   Redirects nicht sauber bei POST mit JSON-Body).
 
-3. **bcrypt + SQLite muessen async**: in async-Middleware blockiert sync-I/O
-   den Event-Loop unter Last. `asyncio.to_thread(...)` ist Pflicht — siehe
-   `*_async()`-Wrapper in `oauth.py`.
+3. **bcrypt + SQLite muessen async aufgerufen werden**: in async-Middleware
+   blockiert sync-I/O den Event-Loop unter Last. `asyncio.to_thread(...)` ist
+   Pflicht — siehe `*_async()`-Wrapper in `oauth.py`.
 
-4. **TOCTOU bei File-Creation vermeiden**: `os.O_EXCL` statt
-   `if not exists(): create()`. Siehe `vault.py`-Pattern in der KI-OS-MCP
-   `create_daily_skeleton`.
+4. **TOCTOU bei File-Creation vermeiden**: nutze `os.O_EXCL` statt
+   `if not exists(): create()` — sonst Race-Condition zwischen Check und Create.
 
-5. **Multi-Marker-Bug bei `text.split()`**: `text.split(MARKER)[0]` haut bei
+5. **`text.split(MARKER)` mit Multi-Markern**: `split(MARKER)[0]` haut bei
    doppelten Markern Daten weg. Loesung: `split(MARKER, 1)[0]` und
    `rsplit(MARKER, 1)[1]`.
+
+6. **DB-Init in async unter Last**: doppelte Locks ohne re-check fuehren zu
+   Race-Conditions. Pattern: fast-path → Lock → re-check → Init.
 
 ## Spec-Compliance
 
 - MCP 2025-06-18 (Tool-Annotations, `isError`, Streamable HTTP)
-- OAuth 2.1 (Auth-Code + PKCE pflicht, kein Implicit-Flow, kein password-grant)
+- OAuth 2.1 (Auth-Code + PKCE pflicht, kein Implicit-Flow, kein Password-Grant)
 - RFC 6749 (OAuth 2.0 Framework)
 - RFC 7591 (Dynamic Client Registration)
 - RFC 7636 (PKCE — S256 only)

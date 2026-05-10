@@ -20,7 +20,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-log = logging.getLogger("ki-os-mcp.audit")
+log = logging.getLogger("template-mcp.audit")
 
 AUDIT_LOG_PATH = Path(os.environ.get("MCP_AUDIT_LOG", "/var/log/mcp/audit.log"))
 

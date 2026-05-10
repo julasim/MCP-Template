@@ -19,7 +19,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
-log = logging.getLogger("ki-os-mcp.ratelimit")
+log = logging.getLogger("template-mcp.ratelimit")
 
 CAPACITY = int(os.environ.get("MCP_RATE_LIMIT_PER_MIN", "60"))
 DISABLED = CAPACITY <= 0

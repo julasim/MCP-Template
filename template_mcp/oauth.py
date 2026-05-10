@@ -1,10 +1,10 @@
-"""OAuth 2.1 Authorization Server fuer den KI-OS MCP-Server.
+"""OAuth 2.1 Authorization Server fuer einen MCP-Server.
 
 Implementiert:
   - Discovery-Endpoints (.well-known/oauth-protected-resource +
     .well-known/oauth-authorization-server)
   - Authorization Code Flow mit PKCE (RFC 7636 — pflicht in 2.1)
-  - Dynamic Client Registration (RFC 7591) — claude.ai braucht das
+  - Dynamic Client Registration (RFC 7591) — viele MCP-Hosts brauchen das
   - JWT Access-Tokens (HS256, 15 Min Lifetime)
   - Refresh-Tokens mit Rotation (3 Tage Lifetime, Replay-Detection)
   - Token-Revocation (RFC 7009)
@@ -16,10 +16,10 @@ Bearer-MCP_TOKEN).
 
 Storage:
   - Authorization-Codes: in-memory (60s expiry, single-use)
-  - Refresh-Tokens: SQLite (`/var/lib/mcp-oauth/oauth.db`, persistent)
+  - Refresh-Tokens: SQLite (Pfad via OAUTH_DB_PATH, persistent)
   - Clients (DCR): SQLite (gleiche DB)
 
-Bestehende Bearer-Auth bleibt parallel — Dual-Auth-Middleware checkt JWT
+Optionale Bearer-Auth laeuft parallel — Dual-Auth-Middleware checkt JWT
 zuerst, faellt zurueck auf statisches Bearer-Token.
 """
 
@@ -42,18 +42,20 @@ from typing import Any
 import bcrypt
 import jwt
 
-log = logging.getLogger("ki-os-mcp.oauth")
+log = logging.getLogger("template-mcp.oauth")
 
 
 # ---------- Config aus ENV --------------------------------------------------
 
-OAUTH_USER_EMAIL = os.environ.get("OAUTH_USER_EMAIL", "julius@sima.or.at").strip().lower()
+OAUTH_USER_EMAIL = os.environ.get("OAUTH_USER_EMAIL", "").strip().lower()
 OAUTH_PASSWORD_HASH = os.environ.get("OAUTH_PASSWORD_HASH", "").strip()
 OAUTH_JWT_SECRET = os.environ.get("OAUTH_JWT_SECRET", "").strip()
 OAUTH_DB_PATH = os.environ.get("OAUTH_DB_PATH", "/var/lib/mcp-oauth/oauth.db")
-# Issuer + Resource URLs — werden in Discovery-Doc + JWT-Claims genutzt
-OAUTH_ISSUER = os.environ.get("OAUTH_ISSUER", "https://wiki-mcp.sima.business").rstrip("/")
-OAUTH_RESOURCE = os.environ.get("OAUTH_RESOURCE", "https://wiki-mcp.sima.business/mcp/")
+# Issuer + Resource URLs — werden in Discovery-Doc + JWT-Claims genutzt.
+# In Production muss das die Public-URL sein, sonst akzeptieren OAuth-Clients
+# die Tokens nicht (audience-Mismatch).
+OAUTH_ISSUER = os.environ.get("OAUTH_ISSUER", "http://localhost:5002").rstrip("/")
+OAUTH_RESOURCE = os.environ.get("OAUTH_RESOURCE", "http://localhost:5002/mcp/")
 
 # Lifetimes (in Sekunden)
 ACCESS_TOKEN_TTL = int(os.environ.get("OAUTH_ACCESS_TTL", "900"))           # 15 Min
@@ -469,7 +471,9 @@ def authorization_server_metadata() -> dict[str, Any]:
         "grant_types_supported": DEFAULT_GRANT_TYPES,
         "code_challenge_methods_supported": SUPPORTED_CODE_CHALLENGE_METHODS,
         "token_endpoint_auth_methods_supported": ["none"],
-        "service_documentation": "https://github.com/julasim/KI_WIKI_MCP",
+        "service_documentation": os.environ.get(
+            "OAUTH_SERVICE_DOCUMENTATION", f"{OAUTH_ISSUER}/health"
+        ),
     }
 
 

@@ -1,17 +1,21 @@
 #!/usr/bin/env python3
-"""Token-Rotation für KI-OS MCP Server.
+"""Token-Rotation fuer Bearer MCP_TOKEN.
 
 Generiert einen neuen MCP_TOKEN, schiebt den alten auf MCP_TOKEN_LEGACY.
-Nach Restart akzeptiert der Server beide Tokens für die Übergangszeit.
-Stelle dann alle Clients auf den neuen Token um, dann löschst du
+Nach Restart akzeptiert der Server beide Tokens fuer die Uebergangszeit.
+Stelle dann alle Clients auf den neuen Token um, dann loeschst du
 MCP_TOKEN_LEGACY und restartest erneut.
 
-Verwendung am VPS:
-  cd /opt/mcp
-  python3 scripts/rotate_token.py [--env-file .env]
+Verwendung:
+  python scripts/rotate_token.py [--env-file .env]
 
 Output: alter Token als legacy gespeichert, neuer Token als MCP_TOKEN.
 Restart-Hinweis am Ende.
+
+NOTE: damit MCP_TOKEN_LEGACY tatsaechlich akzeptiert wird, muss deine
+DualAuthMiddleware das beruecksichtigen. Im Default-Skelett (server.py)
+ist das nicht eingebaut — fuege bei Bedarf `MCP_TOKEN_LEGACY` als
+zweiten gueltigen Token in der Auth-Middleware hinzu.
 """
 
 import argparse
@@ -84,10 +88,10 @@ def main() -> int:
 
     if args.clear_legacy:
         write_env(env_path, env, {"MCP_TOKEN_LEGACY": None})
-        print(f"✓ MCP_TOKEN_LEGACY entfernt aus {env_path}")
+        print(f"OK MCP_TOKEN_LEGACY entfernt aus {env_path}")
         print()
         print("Restart Container damit Legacy-Token nicht mehr akzeptiert wird:")
-        print("  cd /opt/ki-os && docker compose up -d --force-recreate mcp")
+        print("  docker compose up -d --force-recreate")
         return 0
 
     if not current:
@@ -101,21 +105,21 @@ def main() -> int:
     })
 
     print("=" * 60)
-    print("✓ TOKEN ROTATED")
+    print("TOKEN ROTATED")
     print("=" * 60)
     print()
-    print(f"Alt (jetzt LEGACY, akzeptiert bis manuell entfernt):")
+    print("Alt (jetzt LEGACY, akzeptiert bis manuell entfernt):")
     print(f"  {current[:8]}...{current[-6:]}")
     print()
-    print(f"Neu (MCP_TOKEN):")
+    print("Neu (MCP_TOKEN):")
     print(f"  {new_token}")
     print()
-    print("Nächste Schritte:")
-    print(f"  1. Container restarten:")
-    print(f"     cd /opt/ki-os && docker compose up -d --force-recreate mcp")
-    print(f"  2. Client-Configs updaten auf NEUEN Token")
-    print(f"  3. Wenn alle Clients migriert: Legacy entfernen via:")
-    print(f"     python3 {Path(__file__).name} --clear-legacy")
+    print("Naechste Schritte:")
+    print("  1. Container restarten:")
+    print("     docker compose up -d --force-recreate")
+    print("  2. Client-Configs updaten auf NEUEN Token")
+    print("  3. Wenn alle Clients migriert: Legacy entfernen via:")
+    print(f"     python {Path(__file__).name} --clear-legacy")
     print()
     return 0
 
